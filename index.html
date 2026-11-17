@@ -605,7 +605,7 @@ $("#adm").addEventListener("click", async ev => {
       if (LIVE) await A.signInWithEmailAndPassword(auth, em, pw);
       else if (pw === "admin123") isAdmin = true; else throw 0;
       msg = "";
-    } catch { msg = t.bad; }
+    } catch (err) { msg = t.bad + (LIVE && err ? " [" + (err.code || err.message || err) + "]" : ""); }
     renderAdmin(); render(); return;
   }
   if (b.id === "aOut") { if (LIVE) await A.signOut(auth); isAdmin = false; editId = null; renderAdmin(); render(); return; }
