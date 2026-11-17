@@ -1,0 +1,59 @@
+name: site
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Unpack service worker, manifest, icons and robot scripts from index.html
+        run: |
+          node <<'JS'
+          const fs = require("fs"), path = require("path");
+          const html = fs.readFileSync("index.html", "utf8");
+          const m = html.match(/<script type="application\/json" id="bundle">([\s\S]*?)<\/script>/);
+          if (!m) throw new Error("bundle not found in index.html");
+          for (const [name, v] of Object.entries(JSON.parse(m[1]))) {
+            fs.mkdirSync(path.dirname(name), {recursive: true});
+            fs.writeFileSync(name, v.startsWith("base64:") ? Buffer.from(v.slice(7), "base64") : v);
+          }
+          JS
+      - run: npm i --no-save firebase-admin
+      - name: Build data.json for followers
+        run: node scripts/export.js
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Send push notifications
+        continue-on-error: true
+        run: node scripts/notify.js
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - run: |
+          mkdir _site
+          cp index.html sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png icon-maskable-512.png badge-96.png apple-touch-icon.png data.json _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4
